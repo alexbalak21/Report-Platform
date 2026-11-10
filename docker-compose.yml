@@ -1,0 +1,132 @@
+x-env: &env
+  REDIS_URL: ${REDIS_URL}
+  SERVICE_TOKEN: ${SERVICE_TOKEN}
+  JWT_SECRET: ${JWT_SECRET}
+  LOG_LEVEL: ${LOG_LEVEL:-INFO}
+  GATEWAY_URL: http://gateway:8000
+  INGESTION_URL: http://ingestion:8000
+  BLOCK_URL: http://block:8000
+  TEMPLATE_URL: http://template:8000
+  REPORT_URL: http://report:8000
+  EDITOR_URL: http://editor:8000
+
+x-depends: &depends
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      RP_DB_PASSWORD: ${RP_DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/10-init.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  gateway:
+    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: gateway}}
+    depends_on: *depends
+    environment:
+      <<: *env
+      GATEWAY_DATABASE_URL: postgresql+psycopg://rp_gateway:${RP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports:
+      - "8000:8000"
+
+  ingestion:
+    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: ingestion}}
+    depends_on: *depends
+    environment:
+      <<: *env
+      INGESTION_DATABASE_URL: postgresql+psycopg://rp_ingestion:${RP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-ingestion}
+      S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "8001:8000"
+
+  block:
+    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: block}}
+    depends_on: *depends
+    environment:
+      <<: *env
+      BLOCK_DATABASE_URL: postgresql+psycopg://rp_block:${RP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "8002:8000"
+
+  template:
+    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: template}}
+    depends_on: *depends
+    environment:
+      <<: *env
+      TEMPLATE_DATABASE_URL: postgresql+psycopg://rp_template:${RP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "8003:8000"
+
+  report:
+    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: report}}
+    depends_on: *depends
+    environment:
+      <<: *env
+      REPORT_DATABASE_URL: postgresql+psycopg://rp_report:${RP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "8004:8000"
+
+  editor:
+    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: editor}}
+    depends_on: *depends
+    environment:
+      <<: *env
+      EDITOR_DATABASE_URL: postgresql+psycopg://rp_editor:${RP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+    ports:
+      - "8005:8000"
+
+  frontend:
+    image: node:20-alpine
+    working_dir: /app
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    environment:
+      VITE_API_TARGET: http://gateway:8000
+    volumes:
+      - ./frontend:/app
+    ports:
+      - "5173:5173"
+    depends_on:
+      - gateway
+
+volumes:
+  pgdata:
+  miniodata:

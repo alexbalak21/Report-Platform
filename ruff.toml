@@ -1,0 +1,6 @@
+# One ruff config for the whole monorepo (shared/ and services/ alike).
+line-length = 100
+target-version = "py311"
+
+[lint]
+select = ["E", "F", "I", "B", "UP"]

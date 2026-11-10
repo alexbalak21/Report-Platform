@@ -1,0 +1,24 @@
+# Dev overrides: mount source, reload on change.
+# Usage: docker compose -f docker-compose.yml -f docker-compose.dev.yml up
+x-dev-command: &dev-command
+  sh -c "pip install -q -e /srv/shared && gunicorn -b 0.0.0.0:8000 -k gthread --threads 4 --reload wsgi:app"
+
+services:
+  gateway:
+    command: *dev-command
+    volumes: ["./shared:/srv/shared", "./services/gateway:/srv/service"]
+  ingestion:
+    command: *dev-command
+    volumes: ["./shared:/srv/shared", "./services/ingestion:/srv/service"]
+  block:
+    command: *dev-command
+    volumes: ["./shared:/srv/shared", "./services/block:/srv/service"]
+  template:
+    command: *dev-command
+    volumes: ["./shared:/srv/shared", "./services/template:/srv/service"]
+  report:
+    command: *dev-command
+    volumes: ["./shared:/srv/shared", "./services/report:/srv/service"]
+  editor:
+    command: *dev-command
+    volumes: ["./shared:/srv/shared", "./services/editor:/srv/service"]
