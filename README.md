@@ -10,7 +10,7 @@ Stack: Flask, PostgreSQL, Redis, MinIO, Vue 3 + Tailwind. Full plan: `docs/softw
 | Phase | State |
 |---|---|
 | 0 Foundation | done: monorepo, shared lib, compose, CI |
-| 1 Gateway, auth | done (backend); login screen and shell in the frontend |
+| 1 Auth + gateway | done: standalone `auth` service, DB-free gateway; login screen and shell in the frontend |
 | 2 Ingestion | done (backend) + upload, profiles and data views |
 | 3 Blocks | done (backend) + block library and builder |
 | 4 Templates | backend done (CRUD, versions, validate, render); **builder UI not started** |
@@ -20,6 +20,8 @@ Stack: Flask, PostgreSQL, Redis, MinIO, Vue 3 + Tailwind. Full plan: `docs/softw
 
 Run each service's tests with `cd services/<name> && python -m pytest` (set `TEST_PG_URL` to
 also run the Postgres variants).
+
+Modules and rules: see [docs/modules.md](docs/modules.md).
 
 ## Quick start
 

@@ -20,6 +20,10 @@ SEGMENT_SERVICE = {
     "editor": "editor",
 }
 
+# Handled by the auth service, which checks the bearer token and roles itself (login, refresh and
+# logout are public by nature). The gateway forwards these without adding an identity.
+AUTH_SEGMENTS = {"auth", "users", "audit"}
+
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
 # POSTs that compute something without changing stored state
@@ -49,6 +53,11 @@ def min_role(rel_path: str, method: str) -> str | None:
     if segment == "ingestion" and rel.startswith("ingestion/profiles"):
         return "designer"
     return "operator"
+
+
+def auth_route_exposed(rel_path: str, method: str) -> bool:
+    """False for the one auth-service route that is for other services only (audit writes)."""
+    return not (rel_path.strip("/").startswith("audit") and method.upper() != "GET")
 
 
 def allowed(role: str, needed: str) -> bool:

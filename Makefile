@@ -19,7 +19,7 @@ ps:
 
 test:
 	cd shared && python -m pytest -q
-	for s in gateway ingestion block template report editor; do \
+	for s in auth gateway ingestion block template report editor; do \
 	  (cd services/$$s && python -m pytest -q) || exit 1; \
 	done
 

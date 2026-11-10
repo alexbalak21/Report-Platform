@@ -16,6 +16,7 @@ def test_aggregate_health_reports_down_services():
     assert r.status_code == 200
     assert r.json["status"] == "degraded"
     assert {s["service"] for s in r.json["services"]} == {
+        "auth",
         "ingestion",
         "block",
         "template",

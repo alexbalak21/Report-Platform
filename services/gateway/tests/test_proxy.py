@@ -1,9 +1,6 @@
 from unittest.mock import patch
 
 import requests
-from app.models import AuditLog
-from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 
 class FakeUpstream:
@@ -79,12 +76,99 @@ def test_unconfigured_service_is_502(client, auth):
     assert r.status_code == 502 and r.json["error"]["code"] == "UPSTREAM_ERROR"
 
 
-def test_successful_posts_are_audited_but_puts_are_not(app, client, auth):
+def test_successful_posts_are_audited_but_puts_are_not(client, auth):
     h = auth("operator")
-    with patch("app.api.proxy.requests.request", return_value=FakeUpstream(201)):
+    with (
+        patch("app.api.proxy.requests.request", return_value=FakeUpstream(201)),
+        patch("app.api.proxy.ServiceClient") as audit_client,
+    ):
         client.post("/api/reports", json={}, headers=h)
         client.put("/api/reports/1", json={}, headers=h)
-    with Session(app.extensions["db_engine"]) as s:
-        rows = s.scalars(select(AuditLog).where(AuditLog.action.like("http.%"))).all()
-    assert [r.action for r in rows] == ["http.post"]
-    assert rows[0].meta == {"path": "/reports", "status": 201}
+    calls = audit_client.return_value.request.call_args_list
+    assert len(calls) == 1
+    method, path = calls[0].args
+    body = calls[0].kwargs["json"]
+    assert (method, path) == ("POST", "/audit")
+    assert body["action"] == "http.post" and body["resource_type"] == "report"
+    assert body["meta"] == {"path": "/reports", "status": 201} and body["user_id"]
+
+
+def test_a_failing_audit_never_fails_the_request(client, auth):
+    with (
+        patch("app.api.proxy.requests.request", return_value=FakeUpstream(201)),
+        patch("app.api.proxy.ServiceClient") as audit_client,
+    ):
+        audit_client.return_value.request.side_effect = RuntimeError("auth is down")
+        r = client.post("/api/reports", json={}, headers=auth("operator"))
+    assert r.status_code == 201
+
+
+def test_failed_calls_are_not_audited(client, auth):
+    with (
+        patch("app.api.proxy.requests.request", return_value=FakeUpstream(422)),
+        patch("app.api.proxy.ServiceClient") as audit_client,
+    ):
+        client.post("/api/reports", json={}, headers=auth("operator"))
+    audit_client.return_value.request.assert_not_called()
+
+
+# --------------------------------------------------------------------------- auth passthrough
+class FakeAuthUpstream(FakeUpstream):
+    def __init__(self, status=200, cookies=("rp_refresh=abc; Path=/api/auth; HttpOnly",)):
+        super().__init__(status, headers={"Content-Type": "application/json"})
+        self.raw = type(
+            "Raw", (), {"headers": type("H", (), {"getlist": lambda s, k: list(cookies)})()}
+        )()
+
+
+def test_login_needs_no_token_and_goes_to_the_auth_service(client):
+    client.set_cookie("rp_refresh", "1")
+    with patch("app.api.proxy.requests.request", return_value=FakeAuthUpstream()) as req:
+        r = client.post(
+            "/api/auth/login",
+            json={"email": "a@b.c", "password": "x"},
+            headers={"X-User-Role": "admin", "X-Service-Token": "forged"},
+            environ_overrides={"REMOTE_ADDR": "203.0.113.7"},
+        )
+    assert r.status_code == 200
+    method, url = req.call_args.args
+    assert (method, url) == ("POST", "http://auth:8000/auth/login")
+    sent = req.call_args.kwargs["headers"]
+    assert "rp_refresh=1" in sent["Cookie"] and sent["X-Forwarded-For"] == "203.0.113.7"
+    # no identity, no service token: the auth service verifies the bearer token itself
+    assert "X-User-Role" not in sent and "X-Service-Token" not in sent and "X-User-Id" not in sent
+
+
+def test_bearer_token_and_set_cookie_pass_through_for_auth_routes(client, auth):
+    h = auth("admin")
+    with patch("app.api.proxy.requests.request", return_value=FakeAuthUpstream()) as req:
+        r = client.get("/api/users?x=1", headers=h)
+    assert req.call_args.args == ("GET", "http://auth:8000/users?x=1")
+    assert req.call_args.kwargs["headers"]["Authorization"] == h["Authorization"]
+    assert (
+        "rp_refresh=abc" in r.headers["Set-Cookie"] and "Path=/api/auth" in r.headers["Set-Cookie"]
+    )
+
+
+def test_auth_routes_are_not_audited_by_the_gateway(client):
+    with (
+        patch("app.api.proxy.requests.request", return_value=FakeAuthUpstream()),
+        patch("app.api.proxy.ServiceClient") as audit_client,
+    ):
+        client.post("/api/auth/login", json={})
+    audit_client.return_value.request.assert_not_called()
+
+
+def test_audit_writes_are_not_reachable_from_a_browser(client, auth):
+    h = auth("admin")
+    assert client.post("/api/audit", json={"action": "x"}, headers=h).status_code == 404
+    with patch("app.api.proxy.requests.request", return_value=FakeAuthUpstream()):
+        assert (
+            client.get("/api/audit", headers=h).status_code == 200
+        )  # reading is the auth service's call
+
+
+def test_auth_service_down_maps_to_502(client):
+    with patch("app.api.proxy.requests.request", side_effect=requests.ConnectionError()):
+        r = client.post("/api/auth/login", json={})
+    assert r.status_code == 502 and r.json["error"]["code"] == "UPSTREAM_ERROR"

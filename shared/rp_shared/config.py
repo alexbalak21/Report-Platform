@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass, field
 
-SERVICE_NAMES = ("gateway", "ingestion", "block", "template", "report", "editor")
+SERVICE_NAMES = ("gateway", "auth", "ingestion", "block", "template", "report", "editor")
 
 
 @dataclass(frozen=True)

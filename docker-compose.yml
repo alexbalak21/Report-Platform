@@ -4,6 +4,7 @@ x-env: &env
   JWT_SECRET: ${JWT_SECRET}
   LOG_LEVEL: ${LOG_LEVEL:-INFO}
   GATEWAY_URL: http://gateway:8000
+  AUTH_URL: http://auth:8000
   INGESTION_URL: http://ingestion:8000
   BLOCK_URL: http://block:8000
   TEMPLATE_URL: http://template:8000
@@ -53,15 +54,28 @@ services:
       - "9000:9000"
       - "9001:9001"
 
-  gateway:
-    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: gateway}}
+  # Users, login/refresh, JWT issuing and the audit log. Reached through the gateway
+  # (/api/auth, /api/users, /api/audit); modules verify its tokens with the shared JWT_SECRET.
+  auth:
+    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: auth}}
     depends_on: *depends
     environment:
       <<: *env
-      GATEWAY_DATABASE_URL: postgresql+psycopg://rp_gateway:${RP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      AUTH_DATABASE_URL: postgresql+psycopg://rp_auth:${RP_DB_PASSWORD}@postgres:5432/${POSTGRES_DB}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       COOKIE_SECURE: ${COOKIE_SECURE:-false}
+    ports:
+      - "8006:8000"
+
+  # The single entry point: no database, only token checks, role policy and routing.
+  gateway:
+    build: {context: ., dockerfile: services/Dockerfile, args: {SERVICE: gateway}}
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      <<: *env
     ports:
       - "8000:8000"
 

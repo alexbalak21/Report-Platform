@@ -10,7 +10,7 @@ EOSQL
 
 # role : schemas it owns (space separated)
 SERVICES=(
-  "gateway:auth"
+  "auth:auth"
   "ingestion:ingestion data"
   "block:blocks"
   "template:templates"

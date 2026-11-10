@@ -21,7 +21,7 @@ jobs:
       - run: cd shared && pytest -q
       - name: "Service tests (one process per service, each has an app package)"
         run: |
-          for s in gateway ingestion block template report editor; do
+          for s in auth gateway ingestion block template report editor; do
             (cd services/$s && python -m pytest -q) || exit 1
           done
 
@@ -46,7 +46,7 @@ jobs:
     needs: [backend]
     strategy:
       matrix:
-        service: [gateway, ingestion, block, template, report, editor]
+        service: [auth, gateway, ingestion, block, template, report, editor]
     steps:
       - uses: actions/checkout@v4
       - run: docker build -f services/Dockerfile --build-arg SERVICE=${{ matrix.service }} .

@@ -4,6 +4,9 @@ x-dev-command: &dev-command
   sh -c "pip install -q -e /srv/shared && gunicorn -b 0.0.0.0:8000 -k gthread --threads 4 --reload wsgi:app"
 
 services:
+  auth:
+    command: *dev-command
+    volumes: ["./shared:/srv/shared", "./services/auth:/srv/service"]
   gateway:
     command: *dev-command
     volumes: ["./shared:/srv/shared", "./services/gateway:/srv/service"]
